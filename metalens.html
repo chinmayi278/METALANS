@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MetaLens AI — Intelligent File Analyzer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsqr/1.4.0/jsQR.js"></script>
+<style>
+:root{
+  --bg-0:#05070d;
+  --bg-1:#0a0f1c;
+  --panel:rgba(18,24,42,0.55);
+  --panel-border:rgba(120,170,255,0.14);
+  --cyan:#4fe3ff;
+  --violet:#8b6bff;
+  --magenta:#ff5fd8;
+  --amber:#ffb454;
+  --green:#5dffb0;
+  --red:#ff5f6d;
+  --text-0:#eef3ff;
+  --text-1:#a9b4d0;
+  --text-2:#6e7797;
+  --mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+  --sans:'Sora','Inter',-apple-system,sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  min-height:100vh;
+  background:
+    radial-gradient(ellipse 80% 60% at 20% -10%, rgba(139,107,255,0.18), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 100% 0%, rgba(79,227,255,0.14), transparent 60%),
+    radial-gradient(ellipse 60% 60% at 50% 100%, rgba(255,95,216,0.08), transparent 60%),
+    var(--bg-0);
+  font-family:var(--sans);
+  color:var(--text-0);
+  overflow-x:hidden;
+  position:relative;
+}
+@font-face{font-family:'Sora';src:local('Sora');}
+#particles{position:fixed;inset:0;z-index:0;pointer-events:none;}
+.wrap{position:relative;z-index:1;max-width:1180px;margin:0 auto;padding:36px 24px 90px;}
+
+/* ---------- header ---------- */
+header{display:flex;align-items:center;justify-content:space-between;margin-bottom:34px;flex-wrap:wrap;gap:14px;}
+.brand{display:flex;align-items:center;gap:12px;}
+.brand-mark{
+  width:42px;height:42px;border-radius:12px;
+  background:conic-gradient(from 180deg,var(--cyan),var(--violet),var(--magenta),var(--cyan));
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 24px rgba(79,227,255,0.45);
+  animation:spin 6s linear infinite;
+}
+.brand-mark svg{animation:spin 6s linear infinite reverse;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.brand h1{font-size:20px;margin:0;letter-spacing:0.3px;font-weight:700;}
+.brand span{display:block;font-size:11px;color:var(--text-2);letter-spacing:2.5px;text-transform:uppercase;margin-top:2px;}
+.status-pill{
+  font-family:var(--mono);font-size:11px;color:var(--green);
+  border:1px solid rgba(93,255,176,0.35);background:rgba(93,255,176,0.07);
+  padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:7px;
+}
+.status-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);animation:pulse 1.6s infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+
+/* ---------- glass panel base ---------- */
+.glass{
+  background:var(--panel);
+  border:1px solid var(--panel-border);
+  border-radius:18px;
+  backdrop-filter:blur(18px) saturate(140%);
+  -webkit-backdrop-filter:blur(18px) saturate(140%);
+  box-shadow:0 8px 32px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* ---------- dropzone ---------- */
+.dropzone{
+  padding:56px 24px;text-align:center;cursor:pointer;position:relative;overflow:hidden;
+  transition:border-color .25s, transform .2s, box-shadow .25s;
+}
+.dropzone:hover{transform:translateY(-2px);}
+.dropzone.drag{
+  border-color:var(--cyan);
+  box-shadow:0 0 0 1px rgba(79,227,255,0.4), 0 0 50px rgba(79,227,255,0.25);
+}
+.dz-icon{width:72px;height:72px;margin:0 auto 18px;position:relative;}
+.dz-icon svg{width:100%;height:100%;filter:drop-shadow(0 0 14px rgba(79,227,255,0.55));}
+.dropzone h2{margin:0 0 6px;font-size:19px;font-weight:600;}
+.dropzone p{margin:0;color:var(--text-1);font-size:13.5px;}
+.dropzone input{display:none;}
+.dz-formats{margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+.chip{font-family:var(--mono);font-size:10.5px;color:var(--text-2);border:1px solid var(--panel-border);padding:3px 9px;border-radius:8px;}
+.compare-toggle{display:flex;justify-content:center;margin-top:18px;gap:10px;}
+.tbtn{
+  font-family:var(--sans);font-size:12.5px;color:var(--text-1);background:transparent;
+  border:1px solid var(--panel-border);padding:8px 16px;border-radius:10px;cursor:pointer;transition:.2s;
+}
+.tbtn.active{color:var(--bg-0);background:linear-gradient(120deg,var(--cyan),var(--violet));border-color:transparent;font-weight:600;}
+
+/* ---------- scanning overlay ---------- */
+#scan{display:none;margin-top:26px;}
+#scan.show{display:block;animation:fadeUp .4s ease;}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.scan-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:20px 24px 0;}
+.scan-head h3{margin:0;font-size:14px;font-weight:600;font-family:var(--mono);color:var(--cyan);letter-spacing:.5px;}
+.scan-pct{font-family:var(--mono);font-size:22px;color:var(--text-0);font-weight:700;}
+.bar-track{height:6px;margin:0 24px;border-radius:6px;background:rgba(255,255,255,0.06);overflow:hidden;}
+.bar-fill{height:100%;width:0%;border-radius:6px;background:linear-gradient(90deg,var(--cyan),var(--violet),var(--magenta));background-size:200% 100%;animation:flow 2s linear infinite;transition:width .35s ease;}
+@keyframes flow{to{background-position:-200% 0;}}
+.scan-steps{padding:18px 24px 24px;display:flex;flex-direction:column;gap:9px;}
+.scan-step{display:flex;align-items:center;gap:10px;font-family:var(--mono);font-size:12.5px;color:var(--text-2);transition:.3s;}
+.scan-step .dot{width:14px;height:14px;border-radius:50%;border:2px solid var(--text-2);flex:none;display:flex;align-items:center;justify-content:center;transition:.3s;}
+.scan-step.active{color:var(--text-0);}
+.scan-step.active .dot{border-color:var(--cyan);box-shadow:0 0 10px var(--cyan);}
+.scan-step.done{color:var(--green);}
+.scan-step.done .dot{border-color:var(--green);background:var(--green);}
+.scan-step.done .dot::after{content:'✓';font-size:9px;color:#04140c;font-weight:900;}
+
+/* ---------- results ---------- */
+#results{display:none;margin-top:30px;}
+#results.show{display:block;}
+.summary-card{padding:26px 28px;margin-bottom:22px;position:relative;overflow:hidden;}
+.summary-card::before{content:'';position:absolute;top:-40%;right:-10%;width:300px;height:300px;background:radial-gradient(circle,rgba(139,107,255,0.25),transparent 70%);pointer-events:none;}
+.summary-tag{font-family:var(--mono);font-size:10.5px;letter-spacing:2px;color:var(--violet);text-transform:uppercase;margin-bottom:10px;}
+.summary-text{font-size:18px;line-height:1.55;font-weight:500;color:var(--text-0);}
+.summary-text b{color:var(--cyan);font-weight:700;}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:18px;margin-bottom:22px;}
+.card{padding:20px;animation:fadeUp .5s ease backwards;}
+.card h4{margin:0 0 16px;font-size:11.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--text-2);display:flex;align-items:center;gap:8px;}
+.card h4 .ico{font-size:15px;}
+
+/* score ring */
+.ring-wrap{display:flex;align-items:center;gap:18px;}
+.ring{position:relative;width:104px;height:104px;flex:none;}
+.ring svg{transform:rotate(-90deg);width:100%;height:100%;}
+.ring circle{fill:none;stroke-width:9;}
+.ring .track{stroke:rgba(255,255,255,0.07);}
+.ring .prog{stroke:url(#ringGrad);stroke-linecap:round;transition:stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1);}
+.ring-label{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+.ring-label b{font-size:22px;font-family:var(--mono);}
+.ring-label span{font-size:9.5px;color:var(--text-2);text-transform:uppercase;letter-spacing:1px;}
+.score-fields{display:flex;flex-direction:column;gap:6px;font-size:12px;flex:1;}
+.score-fields div{display:flex;justify-content:space-between;color:var(--text-1);}
+.score-fields b{color:var(--text-0);font-weight:600;}
+.ok-dot{color:var(--green);}
+.no-dot{color:var(--text-2);}
+
+/* stars */
+.stars{font-size:26px;letter-spacing:3px;margin:4px 0 8px;}
+.stars .on{color:var(--amber);text-shadow:0 0 12px rgba(255,180,84,0.6);}
+.stars .off{color:rgba(255,255,255,0.12);}
+.flag-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+.flag{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:7px 10px;border-radius:9px;background:rgba(255,255,255,0.03);}
+.flag.warn{color:var(--amber);background:rgba(255,180,84,0.08);}
+.flag.bad{color:var(--red);background:rgba(255,95,109,0.08);}
+.flag.good{color:var(--green);background:rgba(93,255,176,0.08);}
+
+/* data rows */
+.kv{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:13px;}
+.kv:last-child{border-bottom:none;}
+.kv .k{color:var(--text-2);}
+.kv .v{color:var(--text-0);font-family:var(--mono);font-size:12.5px;text-align:right;}
+.bar-mini{width:100%;height:8px;background:rgba(255,255,255,0.06);border-radius:5px;overflow:hidden;margin-top:6px;}
+.bar-mini i{display:block;height:100%;border-radius:5px;background:linear-gradient(90deg,var(--cyan),var(--violet));}
+
+/* resolution bars */
+.res-row{margin-bottom:12px;}
+.res-row .lbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--text-2);margin-bottom:4px;font-family:var(--mono);}
+
+/* palette */
+.palette{display:flex;gap:8px;margin-top:6px;}
+.swatch{flex:1;aspect-ratio:1;border-radius:10px;position:relative;cursor:pointer;transition:transform .2s;border:1px solid rgba(255,255,255,0.08);}
+.swatch:hover{transform:translateY(-4px) scale(1.05);}
+.swatch small{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-family:var(--mono);font-size:8.5px;color:var(--text-2);white-space:nowrap;}
+
+/* timeline */
+.timeline{display:flex;flex-direction:column;gap:0;padding-left:6px;}
+.tl-item{display:flex;gap:16px;position:relative;padding-bottom:26px;}
+.tl-item:last-child{padding-bottom:0;}
+.tl-node{width:12px;height:12px;border-radius:50%;background:var(--cyan);box-shadow:0 0 10px var(--cyan);flex:none;margin-top:3px;position:relative;z-index:1;}
+.tl-item::before{content:'';position:absolute;left:5.5px;top:14px;bottom:0;width:1px;background:linear-gradient(180deg,rgba(79,227,255,0.5),rgba(139,107,255,0.1));}
+.tl-item:last-child::before{display:none;}
+.tl-body b{display:block;font-size:13px;color:var(--text-0);}
+.tl-body span{font-size:11.5px;color:var(--text-2);font-family:var(--mono);}
+
+/* map */
+.map-frame{width:100%;height:220px;border:0;border-radius:12px;filter:saturate(0.9) brightness(0.85) hue-rotate(180deg) invert(1);margin-top:4px;}
+
+/* export buttons */
+.export-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:6px;}
+.ebtn{
+  font-family:var(--mono);font-size:12px;color:var(--text-0);background:rgba(255,255,255,0.04);
+  border:1px solid var(--panel-border);padding:10px 16px;border-radius:11px;cursor:pointer;
+  display:flex;align-items:center;gap:8px;transition:.2s;
+}
+.ebtn:hover{border-color:var(--cyan);box-shadow:0 0 16px rgba(79,227,255,0.25);transform:translateY(-2px);}
+
+.reset-btn{position:fixed;bottom:26px;right:26px;z-index:5;width:52px;height:52px;border-radius:50%;
+  background:linear-gradient(140deg,var(--cyan),var(--violet));border:none;cursor:pointer;
+  box-shadow:0 6px 22px rgba(79,227,255,0.4);display:none;align-items:center;justify-content:center;}
+.reset-btn.show{display:flex;}
+.reset-btn svg{width:22px;height:22px;}
+
+/* compare table */
+.cmp-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.cmp-table th,.cmp-table td{padding:10px 12px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.06);}
+.cmp-table th{color:var(--text-2);font-weight:600;text-transform:uppercase;font-size:10.5px;letter-spacing:1px;}
+.cmp-table td{font-family:var(--mono);color:var(--text-0);}
+.cmp-diff{color:var(--amber);}
+.cmp-same{color:var(--green);}
+
+.hidden{display:none !important;}
+@media(max-width:600px){.wrap{padding:22px 14px 70px;}.dropzone{padding:38px 14px;}}
+</style>
+</head>
+<body>
+<canvas id="particles"></canvas>
+<div class="wrap">
+
+  <header>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="7" stroke="#05070d" stroke-width="2.2"/><line x1="16.2" y1="16.2" x2="21" y2="21" stroke="#05070d" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <h1>MetaLens AI</h1>
+        <span>Intelligent File Forensics</span>
+      </div>
+    </div>
+    <div class="status-pill"><span class="status-dot"></span>ENGINE READY · CLIENT-SIDE ANALYSIS</div>
+  </header>
+
+  <div class="glass dropzone" id="dropzone">
+    <div class="dz-icon">
+      <svg viewBox="0 0 48 48" fill="none"><path d="M24 6v24m0-24 9 9m-9-9-9 9" stroke="#4fe3ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 32v6a4 4 0 0 0 4 4h24a4 4 0 0 0 4-4v-6" stroke="#8b6bff" stroke-width="2.4" stroke-linecap="round"/></svg>
+    </div>
+    <h2 id="dzTitle">Drop a file to begin analysis</h2>
+    <p>or click to browse — images and PDFs supported</p>
+    <div class="dz-formats">
+      <span class="chip">JPG</span><span class="chip">PNG</span><span class="chip">WEBP</span><span class="chip">HEIC</span><span class="chip">PDF</span>
+    </div>
+    <input type="file" id="fileInput" accept="image/*,application/pdf">
+    <div class="compare-toggle">
+      <button class="tbtn active" id="modeSingle" type="button">Single File</button>
+      <button class="tbtn" id="modeCompare" type="button">Compare Two Images</button>
+    </div>
+  </div>
+
+  <div class="glass" id="scan">
+    <div class="scan-head"><h3 id="scanTitle">ANALYZING FILE.JPG</h3><div class="scan-pct" id="scanPct">0%</div></div>
+    <div class="bar-track"><div class="bar-fill" id="barFill"></div></div>
+    <div class="scan-steps" id="scanSteps"></div>
+  </div>
+
+  <div id="results">
+    <div class="glass summary-card">
+      <div class="summary-tag">◆ AI Summary</div>
+      <div class="summary-text" id="summaryText">—</div>
+    </div>
+    <div class="grid" id="resultsGrid"></div>
+    <div id="compareSection"></div>
+  </div>
+
+</div>
+
+<button class="reset-btn" id="resetBtn" title="Analyze a new file">
+  <svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 1 1 2.6 5.9M4 12V6m0 6h6" stroke="#05070d" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+
+<svg width="0" height="0"><defs><linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#4fe3ff"/><stop offset="100%" stop-color="#8b6bff"/></linearGradient></defs></svg>
+
+<script>
+/* ============ PARTICLE BACKGROUND ============ */
+(function(){
+  const c=document.getElementById('particles'),ctx=c.getContext('2d');
+  let w,h,pts=[];
+  function size(){w=c.width=innerWidth;h=c.height=innerHeight;}
+  size();addEventListener('resize',size);
+  const N=Math.min(70,Math.floor(innerWidth/22));
+  for(let i=0;i<N;i++)pts.push({x:Math.random()*w,y:Math.random()*h,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,r:Math.random()*1.6+.4,hue:Math.random()>0.5?'79,227,255':'139,107,255'});
+  function tick(){
+    ctx.clearRect(0,0,w,h);
+    for(const p of pts){
+      p.x+=p.vx;p.y+=p.vy;
+      if(p.x<0||p.x>w)p.vx*=-1;
+      if(p.y<0||p.y>h)p.vy*=-1;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);
+      ctx.fillStyle=`rgba(${p.hue},${0.55})`;ctx.fill();
+    }
+    for(let i=0;i<pts.length;i++)for(let j=i+1;j<pts.length;j++){
+      const a=pts[i],b=pts[j],d=Math.hypot(a.x-b.x,a.y-b.y);
+      if(d<110){ctx.strokeStyle=`rgba(79,227,255,${0.09*(1-d/110)})`;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+    }
+    requestAnimationFrame(tick);
+  }
+  tick();
+})();
+
+/* ============ STATE ============ */
+let compareMode=false, slotA=null, slotB=null, currentTarget='A';
+const dropzone=document.getElementById('dropzone'),fileInput=document.getElementById('fileInput');
+const modeSingle=document.getElementById('modeSingle'),modeCompare=document.getElementById('modeCompare');
+const scanEl=document.getElementById('scan'),resultsEl=document.getElementById('results');
+const resetBtn=document.getElementById('resetBtn');
+
+modeSingle.onclick=()=>{compareMode=false;modeSingle.classList.add('active');modeCompare.classList.remove('active');document.getElementById('dzTitle').textContent='Drop a file to begin analysis';};
+modeCompare.onclick=()=>{compareMode=true;modeCompare.classList.add('active');modeSingle.classList.remove('active');document.getElementById('dzTitle').textContent='Drop the first image to compare';};
+
+dropzone.addEventListener('click',(e)=>{ if(e.target.tagName!=='BUTTON') fileInput.click(); });
+dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('drag');});
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop',e=>{
+  e.preventDefault();dropzone.classList.remove('drag');
+  if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+resetBtn.addEventListener('click',()=>{
+  resultsEl.classList.remove('show');scanEl.classList.remove('show');resetBtn.classList.remove('show');
+  slotA=null;slotB=null;currentTarget='A';
+  document.getElementById('dzTitle').textContent=compareMode?'Drop the first image to compare':'Drop a file to begin analysis';
+  fileInput.value='';
+});
+
+/* ============ FILE HANDLER / SCAN SEQUENCE ============ */
+const STEP_LABELS=['Reading file bytes','Extracting metadata','Analyzing pixels','Running forensic checks','Generating insights'];
+
+function handleFile(file){
+  if(compareMode){
+    if(!file.type.startsWith('image/')){alert('Compare mode supports images only.');return;}
+    if(!slotA){slotA={file};runScan(file,()=>{}, res=>{slotA=res;document.getElementById('dzTitle').textContent='Drop the second image to compare';fileInput.value='';});return;}
+    if(!slotB){runScan(file,()=>{}, res=>{slotB=res;renderCompare(slotA,slotB);});return;}
+  } else {
+    runScan(file,()=>{},renderSingle);
+  }
+}
+
+function runScan(file,onStep,onDone){
+  resultsEl.classList.remove('show');
+  scanEl.classList.add('show');
+  document.getElementById('scanTitle').textContent='ANALYZING '+file.name.toUpperCase();
+  const stepsEl=document.getElementById('scanSteps');
+  stepsEl.innerHTML=STEP_LABELS.map((s,i)=>`<div class="scan-step" id="step${i}"><div class="dot"></div>${s}</div>`).join('');
+  const bar=document.getElementById('barFill'),pct=document.getElementById('scanPct');
+  let i=0;
+  function next(){
+    if(i>0)document.getElementById('step'+(i-1)).classList.replace('active','done');
+    if(i<STEP_LABELS.length){
+      document.getElementById('step'+i).classList.add('active');
+      const p=Math.round(((i+1)/STEP_LABELS.length)*100);
+      bar.style.width=p+'%';pct.textContent=p+'%';
+      i++;
+      setTimeout(next,380+Math.random()*260);
+    } else {
+      analyzeFile(file).then(result=>{
+        setTimeout(()=>{
+          scanEl.classList.remove('show');
+          resetBtn.classList.add('show');
+          onDone(result);
+        },250);
+      });
+    }
+  }
+  next();
+}
+
+/* ============ CORE ANALYSIS ============ */
+async function analyzeFile(file){
+  const base={
+    name:file.name, size:file.size, type:file.type||'unknown',
+    lastModified:new Date(file.lastModified), uploaded:new Date()
+  };
+  if(file.type==='application/pdf'||file.name.toLowerCase().endsWith('.pdf')){
+    return {...base, kind:'pdf', ...(await analyzePDF(file))};
+  } else if(file.type.startsWith('image/')){
+    return {...base, kind:'image', ...(await analyzeImage(file))};
+  }
+  return {...base, kind:'other'};
+}
+
+/* ---- image analysis ---- */
+function analyzeImage(file){
+  return new Promise(resolve=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      const scale=Math.min(1,240/Math.max(img.naturalWidth,img.naturalHeight));
+      canvas.width=Math.max(1,Math.round(img.naturalWidth*scale));
+      canvas.height=Math.max(1,Math.round(img.naturalHeight*scale));
+      const ctx=canvas.getContext('2d');
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      let imgData=null;
+      try{ imgData=ctx.getImageData(0,0,canvas.width,canvas.height); }catch(e){}
+
+      const pixelStats=imgData?computePixelStats(imgData):null;
+      const palette=imgData?extractPalette(imgData,5):[];
+      let qr=null;
+      try{ if(window.jsQR && imgData) qr=jsQR(imgData.data,imgData.width,imgData.height); }catch(e){}
+
+      EXIF.getData(file, function(){
+        const tags=EXIF.getAllTags(this)||{};
+        const gps=extractGPS(tags);
+        const camera={
+          make:tags.Make||null, model:tags.Model||null, lens:tags.LensModel||null,
+          iso:tags.ISOSpeedRatings||null, exposure:tags.ExposureTime?formatExposure(tags.ExposureTime):null,
+          aperture:tags.FNumber?('f/'+tags.FNumber):null, focalLength:tags.FocalLength?(tags.FocalLength+'mm'):null,
+          flash:tags.Flash!==undefined?(tags.Flash%2===1?'ON':'OFF'):null,
+          software:tags.Software||null,
+          dateTaken:tags.DateTimeOriginal?parseExifDate(tags.DateTimeOriginal):null
+        };
+        const hasExif=Object.keys(tags).length>0;
+        const forensics=runImageForensics({file,img,camera,gps,hasExif,pixelStats});
+        resolve({
+          width:img.naturalWidth, height:img.naturalHeight,
+          aspectRatio:(img.naturalWidth/img.naturalHeight).toFixed(3),
+          camera, gps, hasExif, palette, pixelStats, forensics, qr:qr?qr.data:null,
+          previewUrl:url
+        });
+      });
+    };
+    img.onerror=()=>resolve({error:'Could not load image'});
+    img.src=url;
+  });
+}
+
+function computePixelStats(imgData){
+  const d=imgData.data;let sum=0,sumSq=0,n=d.length/4;
+  const gray=new Float32Array(n);
+  for(let i=0,p=0;i<d.length;i+=4,p++){
+    const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
+    gray[p]=g;sum+=g;sumSq+=g*g;
+  }
+  const mean=sum/n; const variance=sumSq/n-mean*mean; const stdDev=Math.sqrt(Math.max(0,variance));
+  // rough sharpness via laplacian variance on the grayscale grid
+  const w=imgData.width,h=imgData.height;let lapSum=0,lapCount=0;
+  for(let y=1;y<h-1;y++){
+    for(let x=1;x<w-1;x++){
+      const idx=y*w+x;
+      const lap=4*gray[idx]-gray[idx-1]-gray[idx+1]-gray[idx-w]-gray[idx+w];
+      lapSum+=lap*lap;lapCount++;
+    }
+  }
+  const sharpness=lapCount?lapSum/lapCount:0;
+  return {
+    brightness:Math.round(mean/255*100),
+    contrast:Math.round(Math.min(100,stdDev/1.28)),
+    sharpness:Math.round(Math.min(100,sharpness/40))
+  };
+}
+
+function extractPalette(imgData,count){
+  const d=imgData.data,buckets={};
+  for(let i=0;i<d.length;i+=4){
+    const r=d[i]>>4,g=d[i+1]>>4,b=d[i+2]>>4; // quantize to 16 levels/channel
+    const key=r+','+g+','+b;
+    buckets[key]=(buckets[key]||0)+1;
+  }
+  const sorted=Object.entries(buckets).sort((a,b)=>b[1]-a[1]).slice(0,count);
+  return sorted.map(([key])=>{
+    const [r,g,b]=key.split(',').map(v=>(parseInt(v)<<4)+8);
+    return {hex:'#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join(''),rgb:`${r}, ${g}, ${b}`};
+  });
+}
+
+function extractGPS(tags){
+  if(!tags.GPSLatitude||!tags.GPSLongitude) return null;
+  const toDec=(arr,ref)=>{
+    let d=arr[0]+arr[1]/60+arr[2]/3600;
+    if(ref==='S'||ref==='W')d*=-1;
+    return d;
+  };
+  const lat=toDec(tags.GPSLatitude,tags.GPSLatitudeRef);
+  const lon=toDec(tags.GPSLongitude,tags.GPSLongitudeRef);
+  if(isNaN(lat)||isNaN(lon)) return null;
+  return {lat,lon};
+}
+
+function runImageForensics({file,img,camera,gps,hasExif,pixelStats}){
+  const flags=[];
+  let editedGuess='Unknown';
+  const editors=['photoshop','gimp','lightroom','snapseed','facetune','vsco','picsart','canva','affinity'];
+  if(camera.software && editors.some(e=>camera.software.toLowerCase().includes(e))){
+    editedGuess='Likely Edited'; flags.push({type:'bad',text:'Editing software detected: '+camera.software});
+  } else if(hasExif && camera.make){
+    editedGuess='Likely Original';
+  }
+  const screenshotRes=[[1170,2532],[1080,1920],[1080,2340],[828,1792],[1440,3200],[1284,2778],[750,1334],[1242,2688],[2560,1440],[1920,1080]];
+  const isScreenshotRes=screenshotRes.some(([w,h])=>(img.naturalWidth===w&&img.naturalHeight===h)||(img.naturalWidth===h&&img.naturalHeight===w));
+  const isScreenshot = (!hasExif && isScreenshotRes) || /screenshot|screen shot/i.test(file.name);
+  if(isScreenshot) flags.push({type:'warn',text:'Screenshot signature detected'});
+
+  const socialSizes=[[1080,1080],[1080,1350],[1080,608],[1200,630],[1200,675]];
+  const isSocial = socialSizes.some(([w,h])=>img.naturalWidth===w&&img.naturalHeight===h);
+  if(isSocial) flags.push({type:'warn',text:'Resolution matches social-media export size'});
+
+  const jpegLike = /jpe?g/i.test(file.type)||/\.jpe?g$/i.test(file.name);
+  const metadataStripped = jpegLike && !hasExif;
+  if(metadataStripped) flags.push({type:'bad',text:'Metadata appears stripped from JPEG'});
+
+  if(!hasExif && !isScreenshot) flags.push({type:'warn',text:'No EXIF metadata present'});
+  if(gps) flags.push({type:'good',text:'GPS coordinates embedded'});
+  if(hasExif && camera.make) flags.push({type:'good',text:'Camera metadata intact'});
+
+  let score=5;
+  if(editedGuess==='Likely Edited')score--;
+  if(isScreenshot)score--;
+  if(metadataStripped)score--;
+  if(isSocial)score--;
+  score=Math.max(1,Math.min(5,score));
+
+  return {editedGuess,isScreenshot,isSocial,metadataStripped,flags,securityScore:score};
+}
+
+function formatExposure(t){
+  if(t>=1) return t+'s';
+  const denom=Math.round(1/t);
+  return '1/'+denom;
+}
+function parseExifDate(s){
+  // format: YYYY:MM:DD HH:MM:SS
+  const [d,t]=s.split(' ');
+  const [Y,M,D]=d.split(':');
+  return new Date(`${Y}-${M}-${D}T${t||'00:00:00'}`);
+}
+
+/* ---- PDF analysis ---- */
+async function analyzePDF(file){
+  try{
+    if(pdfjsLib.GlobalWorkerOptions.workerSrc===undefined || pdfjsLib.GlobalWorkerOptions.workerSrc===''){
+      pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const buf=await file.arrayBuffer();
+    const doc=await pdfjsLib.getDocument({data:buf}).promise;
+    const meta=await doc.getMetadata().catch(()=>({info:{}}));
+    const info=meta.info||{};
+    let wordCount=0;
+    const maxPagesToScan=Math.min(doc.numPages,25);
+    let sampleText='';
+    for(let p=1;p<=maxPagesToScan;p++){
+      const page=await doc.getPage(p);
+      const tc=await page.getTextContent();
+      const txt=tc.items.map(it=>it.str).join(' ');
+      wordCount+=txt.trim().length?txt.trim().split(/\s+/).length:0;
+      if(sampleText.length<2000) sampleText+=' '+txt;
+    }
+    if(doc.numPages>maxPagesToScan){
+      wordCount=Math.round(wordCount*(doc.numPages/maxPagesToScan));
+    }
+    const language=detectLanguage(sampleText);
+    return {
+      pages:doc.numPages,
+      author:info.Author||null,
+      title:info.Title||null,
+      creator:info.Creator||null,
+      producer:info.Producer||null,
+      pdfVersion:info.PDFFormatVersion||null,
+      encrypted:!!(meta.info && meta.info.IsAcroFormPresent!==undefined)&&false,
+      isEncrypted: doc._transport && doc._transport._fullReader ? false : false,
+      created:info.CreationDate?parsePDFDate(info.CreationDate):null,
+      modified:info.ModDate?parsePDFDate(info.ModDate):null,
+      wordCount, readingTime:Math.max(1,Math.round(wordCount/200)),
+      language
+    };
+  }catch(e){
+    return {error:'Could not parse PDF: '+e.message};
+  }
+}
+function parsePDFDate(s){
+  const m=/D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/.exec(s);
+  if(!m) return null;
+  return new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]||'00'}:${m[5]||'00'}:${m[6]||'00'}`);
+}
+function detectLanguage(text){
+  const t=text.toLowerCase();
+  const stop={English:['the','and','of','to','in','is','that','for'],
+    Spanish:['el','la','de','que','en','los','para'],
+    French:['le','la','de','et','les','des','pour'],
+    German:['der','die','und','das','ist','den','für']};
+  let best='Unknown',bestScore=0;
+  for(const [lang,words] of Object.entries(stop)){
+    let score=0;
+    for(const w of words){ score+=(t.match(new RegExp('\\b'+w+'\\b','g'))||[]).length; }
+    if(score>bestScore){bestScore=score;best=lang;}
+  }
+  return bestScore>3?best:'Unknown';
+}
+
+/* ============ RENDERING ============ */
+function fmtBytes(b){
+  if(b<1024) return b+' B';
+  if(b<1048576) return (b/1024).toFixed(1)+' KB';
+  return (b/1048576).toFixed(2)+' MB';
+}
+function fmtDate(d){
+  if(!d) return '—';
+  return d.toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'});
+}
+
+function metadataQuality(r){
+  const fields = r.kind==='image'
+    ? [r.camera?.make, r.camera?.model, r.camera?.dateTaken, r.gps, r.camera?.iso, r.camera?.exposure, r.width, r.hasExif]
+    : [r.author, r.title, r.creator, r.producer, r.pages, r.created, r.pdfVersion, r.wordCount];
+  const present=fields.filter(Boolean).length;
+  return Math.round(present/fields.length*100);
+}
+
+function buildSummary(r){
+  if(r.kind==='image'){
+    const cam = r.camera.make||r.camera.model ? `${r.camera.make||''} ${r.camera.model||''}`.trim() : (r.forensics.isScreenshot?'a screenshot':'an unknown device');
+    const dateStr = r.camera.dateTaken ? new Date(r.camera.dateTaken).toLocaleDateString('en-US',{day:'numeric',month:'long',year:'numeric'}) : null;
+    const locStr = r.gps ? ` near <b>${r.gps.lat.toFixed(3)}, ${r.gps.lon.toFixed(3)}</b>` : '';
+    let s = `This photo (<b>${r.width}×${r.height}</b>) was `;
+    s += r.forensics.isScreenshot ? `captured as <b>a screenshot</b>` : `captured on <b>${cam}</b>`;
+    if(dateStr) s+= ` on <b>${dateStr}</b>`;
+    if(locStr) s+= locStr;
+    s+='. ';
+    s+= r.forensics.editedGuess==='Likely Edited' ? 'Editing software fingerprints were found in the metadata. ' : '';
+    s+= r.hasExif ? '' : 'No camera metadata was recoverable from this file. ';
+    return s;
+  } else if(r.kind==='pdf'){
+    const days = r.created && r.modified ? Math.round((r.modified-r.created)/86400000) : null;
+    let s = `This PDF contains <b>${r.pages} page${r.pages===1?'':'s'}</b> and roughly <b>${r.wordCount.toLocaleString()} words</b> (~${r.readingTime} min read). `;
+    if(r.creator) s+= `It was produced with <b>${r.creator}</b>. `;
+    if(days!==null && days>0) s+= `It was last modified <b>${days} day${days===1?'':'s'}</b> after creation. `;
+    else if(r.created) s+= `It was created on <b>${fmtDate(r.created)}</b>. `;
+    return s;
+  }
+  return 'This file type has limited metadata support in this analyzer.';
+}
+
+function ring(pct,size=104){
+  const r=(size-9)/2, c=2*Math.PI*r, offset=c-(pct/100)*c;
+  return `<div class="ring" style="width:${size}px;height:${size}px"><svg viewBox="0 0 ${size} ${size}">
+    <circle class="track" cx="${size/2}" cy="${size/2}" r="${r}"/>
+    <circle class="prog" cx="${size/2}" cy="${size/2}" r="${r}" stroke-dasharray="${c}" stroke-dashoffset="${offset}"/>
+  </svg><div class="ring-label"><b>${pct}%</b><span>Score</span></div></div>`;
+}
+function stars(n){
+  let h='<div class="stars">';
+  for(let i=1;i<=5;i++) h+=`<span class="${i<=n?'on':'off'}">★</span>`;
+  return h+'</div>';
+}
+
+function renderSingle(r){
+  document.getElementById('summaryText').innerHTML=buildSummary(r);
+  const grid=document.getElementById('resultsGrid');
+  const quality=metadataQuality(r);
+  let cards='';
+
+  // health score card
+  cards+=`<div class="card glass" style="animation-delay:.02s">
+    <h4><span class="ico">◈</span>Metadata Quality</h4>
+    <div class="ring-wrap">${ring(quality)}
+      <div class="score-fields">
+        <div><span>Camera Info</span><b class="${r.kind==='image'&&r.camera?.make?'ok-dot':'no-dot'}">${r.kind==='image'&&r.camera?.make?'●':'○'}</b></div>
+        <div><span>GPS Available</span><b class="${r.gps?'ok-dot':'no-dot'}">${r.gps?'●':'○'}</b></div>
+        <div><span>Date Available</span><b class="${(r.camera?.dateTaken||r.created)?'ok-dot':'no-dot'}">${(r.camera?.dateTaken||r.created)?'●':'○'}</b></div>
+        <div><span>Complete</span><b>${quality}%</b></div>
+      </div>
+    </div>
+  </div>`;
+
+  if(r.kind==='image'){
+    // security / forensics card
+    cards+=`<div class="card glass" style="animation-delay:.06s">
+      <h4><span class="ico">🛡</span>Security Score</h4>
+      ${stars(r.forensics.securityScore)}
+      <div style="font-size:12px;color:var(--text-2);margin-bottom:4px;">${r.forensics.editedGuess}</div>
+      <div class="flag-list">${r.forensics.flags.map(f=>`<div class="flag ${f.type}">${f.type==='good'?'✓':f.type==='warn'?'⚠':'✕'} ${f.text}</div>`).join('')||'<div class="flag good">✓ No anomalies detected</div>'}</div>
+    </div>`;
+
+    // camera card
+    cards+=`<div class="card glass" style="animation-delay:.1s">
+      <h4><span class="ico">📷</span>Camera Analytics</h4>
+      <div class="kv"><span class="k">Camera</span><span class="v">${r.camera.make||r.camera.model?`${r.camera.make||''} ${r.camera.model||''}`.trim():'Not available'}</span></div>
+      <div class="kv"><span class="k">Lens</span><span class="v">${r.camera.lens||'—'}</span></div>
+      <div class="kv"><span class="k">ISO</span><span class="v">${r.camera.iso||'—'}</span></div>
+      <div class="kv"><span class="k">Exposure</span><span class="v">${r.camera.exposure||'—'}</span></div>
+      <div class="kv"><span class="k">Aperture</span><span class="v">${r.camera.aperture||'—'}</span></div>
+      <div class="kv"><span class="k">Focal Length</span><span class="v">${r.camera.focalLength||'—'}</span></div>
+      <div class="kv"><span class="k">Flash</span><span class="v">${r.camera.flash||'—'}</span></div>
+    </div>`;
+
+    // resolution / quality card
+    if(r.pixelStats){
+      cards+=`<div class="card glass" style="animation-delay:.14s">
+        <h4><span class="ico">◫</span>Image Quality</h4>
+        <div class="res-row"><div class="lbl"><span>Resolution</span><span>${r.width}×${r.height}</span></div>
+          <div class="bar-mini"><i style="width:100%"></i></div></div>
+        <div class="res-row"><div class="lbl"><span>Brightness</span><span>${r.pixelStats.brightness}%</span></div>
+          <div class="bar-mini"><i style="width:${r.pixelStats.brightness}%"></i></div></div>
+        <div class="res-row"><div class="lbl"><span>Contrast</span><span>${r.pixelStats.contrast}%</span></div>
+          <div class="bar-mini"><i style="width:${r.pixelStats.contrast}%"></i></div></div>
+        <div class="res-row"><div class="lbl"><span>Sharpness</span><span>${r.pixelStats.sharpness}%</span></div>
+          <div class="bar-mini"><i style="width:${r.pixelStats.sharpness}%"></i></div></div>
+        <div class="kv"><span class="k">Aspect Ratio</span><span class="v">${r.aspectRatio}</span></div>
+      </div>`;
+    }
+
+    // palette card
+    if(r.palette.length){
+      cards+=`<div class="card glass" style="animation-delay:.18s">
+        <h4><span class="ico">🎨</span>Color Palette</h4>
+        <div class="palette">${r.palette.map(c=>`<div class="swatch" style="background:${c.hex}" title="${c.hex}"><small>${c.hex}</small></div>`).join('')}</div>
+        <div style="height:16px"></div>
+      </div>`;
+    }
+
+    // GPS map card
+    if(r.gps){
+      const lat=r.gps.lat, lon=r.gps.lon, d=0.01;
+      cards+=`<div class="card glass" style="animation-delay:.22s">
+        <h4><span class="ico">📍</span>EXIF Location</h4>
+        <iframe class="map-frame" src="https://www.openstreetmap.org/export/embed.html?bbox=${lon-d}%2C${lat-d}%2C${lon+d}%2C${lat+d}&marker=${lat}%2C${lon}" loading="lazy"></iframe>
+        <div class="kv"><span class="k">Latitude</span><span class="v">${lat.toFixed(6)}</span></div>
+        <div class="kv"><span class="k">Longitude</span><span class="v">${lon.toFixed(6)}</span></div>
+      </div>`;
+    }
+
+    if(r.qr){
+      cards+=`<div class="card glass" style="animation-delay:.26s">
+        <h4><span class="ico">▦</span>QR Code Detected</h4>
+        <div class="kv"><span class="k">Payload</span><span class="v" style="word-break:break-all;text-align:left">${escapeHtml(r.qr)}</span></div>
+      </div>`;
+    }
+  }
+
+  if(r.kind==='pdf'){
+    if(r.error){
+      cards+=`<div class="card glass"><h4>⚠ Error</h4><div class="flag bad">✕ ${r.error}</div></div>`;
+    } else {
+      cards+=`<div class="card glass" style="animation-delay:.06s">
+        <h4><span class="ico">📄</span>PDF Intelligence</h4>
+        <div class="kv"><span class="k">Pages</span><span class="v">${r.pages}</span></div>
+        <div class="kv"><span class="k">Word Count</span><span class="v">${r.wordCount.toLocaleString()}</span></div>
+        <div class="kv"><span class="k">Reading Time</span><span class="v">${r.readingTime} min</span></div>
+        <div class="kv"><span class="k">Language</span><span class="v">${r.language}</span></div>
+        <div class="kv"><span class="k">PDF Version</span><span class="v">${r.pdfVersion||'—'}</span></div>
+        <div class="kv"><span class="k">Creator Software</span><span class="v">${r.creator||'—'}</span></div>
+      </div>`;
+      cards+=`<div class="card glass" style="animation-delay:.1s">
+        <h4><span class="ico">🛡</span>Document Info</h4>
+        <div class="kv"><span class="k">Author</span><span class="v">${r.author||'—'}</span></div>
+        <div class="kv"><span class="k">Title</span><span class="v">${r.title||'—'}</span></div>
+        <div class="kv"><span class="k">Producer</span><span class="v">${r.producer||'—'}</span></div>
+        <div class="kv"><span class="k">Created</span><span class="v">${r.created?fmtDate(r.created):'—'}</span></div>
+        <div class="kv"><span class="k">Modified</span><span class="v">${r.modified?fmtDate(r.modified):'—'}</span></div>
+      </div>`;
+    }
+  }
+
+  // timeline
+  const events=[];
+  if(r.kind==='image' && r.camera.dateTaken) events.push(['Created', r.camera.dateTaken]);
+  if(r.kind==='pdf' && r.created) events.push(['Created', r.created]);
+  events.push(['Modified', r.lastModified]);
+  events.push(['Uploaded', r.uploaded]);
+  events.push(['Analyzed', new Date()]);
+  cards+=`<div class="card glass" style="animation-delay:.3s">
+    <h4><span class="ico">◷</span>File Timeline</h4>
+    <div class="timeline">${events.map(([label,date])=>`<div class="tl-item"><div class="tl-node"></div><div class="tl-body"><b>${label}</b><span>${fmtDate(date)}</span></div></div>`).join('')}</div>
+  </div>`;
+
+  // export card
+  cards+=`<div class="card glass" style="animation-delay:.34s">
+    <h4><span class="ico">⇩</span>Export Report</h4>
+    <div class="export-row">
+      <button class="ebtn" onclick='exportJSON(${JSON.stringify(safeForJSON(r))})'>{ } JSON</button>
+      <button class="ebtn" onclick='exportCSV(${JSON.stringify(safeForJSON(r))})'>▤ CSV</button>
+      <button class="ebtn" onclick="window.print()">🖨 PDF Report</button>
+    </div>
+  </div>`;
+
+  grid.innerHTML=cards;
+  document.getElementById('compareSection').innerHTML='';
+  resultsEl.classList.add('show');
+  resultsEl.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function safeForJSON(r){
+  const clone=JSON.parse(JSON.stringify(r,(k,v)=>v instanceof Date? v.toISOString() : v));
+  return clone;
+}
+function exportJSON(data){
+  download(JSON.stringify(data,null,2), (data.name||'file')+'-metalens.json','application/json');
+}
+function exportCSV(data){
+  const flat={};
+  (function walk(obj,prefix){
+    for(const k in obj){
+      if(obj[k]===null||obj[k]===undefined) continue;
+      if(typeof obj[k]==='object' && !Array.isArray(obj[k])) walk(obj[k],prefix+k+'.');
+      else flat[prefix+k]=Array.isArray(obj[k])?JSON.stringify(obj[k]):obj[k];
+    }
+  })(data,'');
+  const rows=['Field,Value',...Object.entries(flat).map(([k,v])=>`"${k}","${String(v).replace(/"/g,'""')}"`)];
+  download(rows.join('\n'),(data.name||'file')+'-metalens.csv','text/csv');
+}
+function download(content,filename,mime){
+  const blob=new Blob([content],{type:mime});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+}
+function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+
+/* ---- compare rendering ---- */
+function renderCompare(a,b){
+  document.getElementById('summaryText').innerHTML=`Comparing <b>${a.name}</b> and <b>${b.name}</b> — ${a.width}×${a.height} vs ${b.width}×${b.height}.`;
+  document.getElementById('resultsGrid').innerHTML='';
+  const rows=[
+    ['Camera', `${a.camera.make||''} ${a.camera.model||''}`.trim()||'—', `${b.camera.make||''} ${b.camera.model||''}`.trim()||'—'],
+    ['Date Taken', a.camera.dateTaken?fmtDate(a.camera.dateTaken):'—', b.camera.dateTaken?fmtDate(b.camera.dateTaken):'—'],
+    ['GPS', a.gps?`${a.gps.lat.toFixed(3)}, ${a.gps.lon.toFixed(3)}`:'—', b.gps?`${b.gps.lat.toFixed(3)}, ${b.gps.lon.toFixed(3)}`:'—'],
+    ['Resolution', `${a.width}×${a.height}`, `${b.width}×${b.height}`],
+    ['ISO', a.camera.iso||'—', b.camera.iso||'—'],
+    ['Security Score', a.forensics.securityScore+'/5', b.forensics.securityScore+'/5'],
+    ['Metadata Fields', Object.values(a.camera).filter(Boolean).length, Object.values(b.camera).filter(Boolean).length]
+  ];
+  const html=`<div class="glass card" style="padding:24px">
+    <h4><span class="ico">⇄</span>Comparison Result</h4>
+    <table class="cmp-table"><thead><tr><th>Attribute</th><th>${a.name}</th><th>${b.name}</th></tr></thead>
+    <tbody>${rows.map(([label,va,vb])=>{
+      const same=String(va)===String(vb);
+      return `<tr><td>${label}</td><td class="${same?'cmp-same':'cmp-diff'}">${va}</td><td class="${same?'cmp-same':'cmp-diff'}">${vb}</td></tr>`;
+    }).join('')}</tbody></table>
+  </div>`;
+  document.getElementById('compareSection').innerHTML=html;
+  resultsEl.classList.add('show');
+  resultsEl.scrollIntoView({behavior:'smooth',block:'start'});
+}
+</script>
+</body>
+</html>
